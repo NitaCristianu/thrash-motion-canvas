@@ -9,6 +9,8 @@ export default class Renderer {
 
     constructor(experience: Experience) {
         this.master = experience;
+        // Enable shadows for lights that castShadow
+        this.webgl.shadowMap.enabled = true;
     }
 
     public render(size: Vector2) {

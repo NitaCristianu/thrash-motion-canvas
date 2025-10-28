@@ -4,6 +4,7 @@ import Loader from "./utils/Loader";
 import importScene, { sceneJSON } from './utils/importScene';
 import { Logger, useLogger } from '@motion-canvas/core';
 import Renderer from './utils/Renderer';
+import ObjectWrapper from './wrappers/ObjectWrapper';
 
 export interface ExperienceProps extends RectProps {
     initialScenePreset?: sceneJSON
@@ -33,7 +34,7 @@ export default class Experience extends Rect {
 
         this._loader = new Loader(this);
         this._renderer = new Renderer(this);
-        this.logger = useLogger(); 
+        this.logger = useLogger();
         this.scenes = [];
         this.cameras = [];
 
@@ -110,6 +111,23 @@ export default class Experience extends Rect {
         )
 
         super.draw(context);
+    }
+
+    get<T extends THREE.Object3D>(name: string) {
+        // returns a wrapped refrence to the first child named so
+
+        // perform search (not efficient)
+        const inspecting = [...this.selectedScene.children];
+        while (inspecting.length > 0) {
+            const item = inspecting.pop();
+            if (item.name == name) {
+                return new ObjectWrapper(item) as ObjectWrapper<T>;
+            }
+            inspecting.push(...item.children);
+        }
+
+        this.logger.error("Object called " + name + " not found!")
+        
     }
 
 }

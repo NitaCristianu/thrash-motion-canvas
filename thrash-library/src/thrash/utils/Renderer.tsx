@@ -1,6 +1,8 @@
 import { Vector2 } from "@motion-canvas/core";
+import { Vector2 as ThreeVec2 } from "three";
 import Experience from "../Experience";
 import { PerspectiveCamera, WebGLRenderer } from "three";
+
 
 export default class Renderer {
 
@@ -29,9 +31,15 @@ export default class Renderer {
                     camera.updateProjectionMatrix();
                 }
             }
+            
+            const webgl_size = new ThreeVec2();
+            this.webgl.getSize(webgl_size);
 
-            this.webgl.setSize(size.x, size.y);
-            this.webgl.setPixelRatio(pixelRatio);
+            if (webgl_size.x != size.x || webgl_size.y != size.y){
+                this.webgl.setSize(size.x, size.y);
+                this.webgl.setPixelRatio(pixelRatio);
+            }
+
 
             // Render the scene using the configured camera
             this.webgl.render(scene, camera);

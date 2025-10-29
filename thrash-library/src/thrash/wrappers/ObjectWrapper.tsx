@@ -1,18 +1,13 @@
 import { easeInOutCubic, tween, useLogger } from "@motion-canvas/core";
 import { Object3D, PerspectiveCamera, Vector3 } from "three";
-
-export type PossibleVector3 = Vector3 | number | [number, number, number];
-export function getVector3(x: PossibleVector3): Vector3 {
-    if (typeof x == "number") return new Vector3(x, x, x);
-    if (typeof x == 'object' && x instanceof Vector3) return x;
-    if (Array.isArray(x) && x.length == 3) return new Vector3(x[0], x[1], x[2]);
-    return new Vector3();
-}
+import { getVector3, PossibleVector3 } from "../utils/vectors";
 
 
 export default class ObjectWrapper<T extends Object3D> {
 
     public object: T;
+    // Remember the last explicit look target (world point)
+    protected _lastLookTarget?: Vector3;
 
     constructor(object: T) {
         this.object = object;
@@ -84,6 +79,9 @@ export default class ObjectWrapper<T extends Object3D> {
             targetWorld.copy(getVector3(target));
         }
 
+        // Persist target so other motions (e.g. orbit) can infer center
+        this._lastLookTarget = targetWorld.clone();
+
         // Compute end orientation using a temporary lookAt and restore
         this.object.updateMatrixWorld();
         const originalQuat = this.object.quaternion.clone();
@@ -100,6 +98,11 @@ export default class ObjectWrapper<T extends Object3D> {
     // Get current look direction (world space). Returns a normalized vector.
     lookatget() {
         return this.object.getWorldDirection(new Vector3());
+    }
+
+    // Retrieve last explicit look target if available (world space point)
+    looktargetget() {
+        return this._lastLookTarget?.clone();
     }
 
     // Absolute scaling to a target scale vector
@@ -130,44 +133,10 @@ export default class ObjectWrapper<T extends Object3D> {
 
     *select(ammount: number, time: number = 0.66, ease1 = easeInOutCubic, ease2 = easeInOutCubic) {
         yield* this.scalemul(ammount, time / 2, ease1);
-        yield* this.scalemul(ammount, time / 2, ease2);
+        yield* this.scalediv(ammount, time / 2, ease2);
     }
 
-    *zoom(fov: number, time: number = 1, ease = easeInOutCubic) {
-        const ref = this.object;
-        if (ref instanceof PerspectiveCamera) {
-            const start = ref.fov;
-            const target = Math.max(1, Math.min(179, fov));
-            yield* tween(time, (value: number) => {
-                const t = ease(value);
-                ref.fov = start + (target - start) * t;
-                ref.updateProjectionMatrix();
-            });
-            return;
-        }
-        useLogger().error("Zoom only works for perspective camera wrappers");
+    remove(){
+        this.object.removeFromParent();
     }
-
-    zoomget() {
-        if (this.object instanceof PerspectiveCamera)
-            return this.object.fov;
-        useLogger().error("Zoom doesn't exist in non perspective camera wrapper. [zoomget]");
-        return undefined;
-    }
-
-    *zoomin(offset: number, time: number = 1, ease = easeInOutCubic) {
-        const current = this.zoomget();
-        if (typeof current === 'number') {
-            yield* this.zoom(current + offset, time, ease);
-        }
-    }
-
-    *zoomout(offset: number, time: number = 1, ease = easeInOutCubic) {
-        const current = this.zoomget();
-        if (typeof current === 'number') {
-            yield* this.zoom(current - offset, time, ease);
-        }
-    }
-
-
 }

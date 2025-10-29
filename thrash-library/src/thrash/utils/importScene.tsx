@@ -30,7 +30,7 @@ export default function (json: sceneJSON) {
     const scene = new Scene();
 
     const sceneBlock = json?.scene ?? json;
-    if (!sceneBlock) return scene;
+    if (!sceneBlock) return {scene, geomMap : {}, matMap : {}};
 
     const geomMap = new Map<string, BufferGeometry>();
     const matMap = new Map<string, Material>();
@@ -303,5 +303,5 @@ export default function (json: sceneJSON) {
     if (camera) scene.add(camera);
     for (const obj of children) scene.add(obj);
 
-    return scene;
+    return {scene, geomMap, matMap};
 }

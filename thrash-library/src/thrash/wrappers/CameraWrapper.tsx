@@ -86,4 +86,6 @@ export default class PerspectiveCameraWrapper extends ObjectWrapper<PerspectiveC
         });
     }
 
+    
+
 }

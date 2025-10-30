@@ -8,6 +8,7 @@ import ObjectWrapper from './wrappers/ObjectWrapper';
 import { getVector3, PossibleVector3 } from './utils/vectors';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import PerspectiveCameraWrapper from './wrappers/CameraWrapper';
+import { CachedFrame, frameCache } from './utils/frameCache';
 
 export interface ExperienceProps extends RectProps {
     initialScenePreset?: sceneJSON
@@ -189,6 +190,7 @@ export default class Experience extends Rect {
                     // delete and put
                     item.parent.add(model);
                     item.removeFromParent();
+
                 });
                 
 
@@ -225,4 +227,131 @@ export default class Experience extends Rect {
         return new PerspectiveCameraWrapper(this.get<THREE.PerspectiveCamera>("PerspectiveCamera").object);
     }
 
+    public isLoading(){
+        return this._loader.isLoading();
+    }
+
+    public renderSilhouetteSnapshot(options: {
+        camera?: THREE.Camera,
+        root?: THREE.Object3D,
+        cacheKey?: string,
+        useCache?: boolean,
+        verbose?: boolean,
+    } = {}): CachedFrame<HTMLCanvasElement> | undefined {
+        const sourceCamera = options.camera ?? this.selectedCamera;
+        const sourceRoot = options.root ?? this.selectedScene;
+        const useCache = options.useCache ?? false;
+        const verbose = options.verbose ?? false;
+        const logMessage = (message: string) => {
+            if (verbose) {
+                const logger = this.logger as any;
+                if (logger && typeof logger.debug === 'function') {
+                    logger.debug(message);
+                } else if (logger && typeof logger.log === 'function') {
+                    logger.log(message);
+                }
+            }
+        };
+
+        if (!sourceCamera || !sourceRoot) {
+            this.logger.warn?.("Unable to render silhouette snapshot without a camera and root object.");
+            return undefined;
+        }
+
+        const size = this.computedSize();
+        if (size.x <= 0 || size.y <= 0) {
+            this.logger.warn?.("Computed size is zero; skipping silhouette snapshot render.");
+            return undefined;
+        }
+
+        const cacheId = options.cacheKey ?? frameCache.createId("silhouette");
+        if (useCache) {
+            const cached = frameCache.get(cacheId);
+            if (cached) {
+                logMessage(`Silhouette snapshot cache hit for id '${cacheId}'.`);
+                return cached;
+            }
+            logMessage(`No cache entry for id '${cacheId}'. Rendering new snapshot.`);
+        } else {
+            logMessage(`Rendering silhouette snapshot without using cache (id '${cacheId}').`);
+        }
+
+        const rootClone = sourceRoot.clone(true);
+        const sceneClone = rootClone instanceof THREE.Scene ? rootClone : new THREE.Scene();
+        if (!(rootClone instanceof THREE.Scene)) {
+            sceneClone.add(rootClone);
+        }
+
+        const disposableMaterials: THREE.Material[] = [];
+        sceneClone.traverse((child) => {
+            const mesh = child as THREE.Mesh;
+            if (!mesh.isMesh) return;
+
+            const originalMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            const isTransparent = originalMaterials.some((mat) => {
+                const material = mat as THREE.Material;
+                return material.transparent || (material as any).opacity < 1;
+            });
+
+            const material = new THREE.MeshBasicMaterial({
+                color: isTransparent ? 0x808080 : 0xffffff,
+            });
+            disposableMaterials.push(material);
+            mesh.material = material;
+        });
+
+        const cameraClone = sourceCamera.clone() as THREE.Camera;
+        if ((cameraClone as THREE.PerspectiveCamera).isPerspectiveCamera) {
+            const perspective = cameraClone as THREE.PerspectiveCamera;
+            const aspect = size.x / size.y;
+            if (Number.isFinite(aspect)) {
+                perspective.aspect = aspect;
+                perspective.updateProjectionMatrix();
+            }
+        } else if ((cameraClone as THREE.OrthographicCamera).isOrthographicCamera) {
+            const ortho = cameraClone as THREE.OrthographicCamera;
+            // Maintain same size proportions by scaling frustum
+            const halfW = (ortho.right - ortho.left) / 2;
+            const halfH = (ortho.top - ortho.bottom) / 2;
+            const aspect = size.x / size.y;
+            if (Number.isFinite(aspect) && aspect > 0) {
+                const targetHalfW = halfH * aspect;
+                ortho.left = -targetHalfW;
+                ortho.right = targetHalfW;
+                ortho.updateProjectionMatrix();
+            }
+        }
+
+        sceneClone.background = null;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(size.x, size.y, false);
+        renderer.setPixelRatio(1);
+        renderer.setClearColor(0x000000, 0);
+        renderer.render(sceneClone, cameraClone);
+
+        const output = document.createElement('canvas');
+        output.width = size.x;
+        output.height = size.y;
+        const ctx = output.getContext('2d');
+        if (ctx) {
+            ctx.drawImage(renderer.domElement, 0, 0);
+        }
+
+        renderer.dispose();
+        disposableMaterials.forEach((mat) => mat.dispose?.());
+
+        const result: CachedFrame<HTMLCanvasElement> = {
+            id: cacheId,
+            payload: output,
+            createdAt: Date.now(),
+        };
+
+        if (useCache) {
+            logMessage(`Caching silhouette snapshot under id '${cacheId}'.`);
+            return frameCache.set(cacheId, output);
+        }
+
+        return result;
+    }
 }
